@@ -20,22 +20,23 @@ import time
 
 ### Colors for visualization
 # Ego: red, other: blue
-COLORS_DEBUG = [(0,0,255), (255,0,0)]
+COLORS_DEBUG = [(255,0,0), (0,0,255)]
 
-"""
-    CNN Node. It takes an image as input and process it using the neural network. Then it resizes the output
-    and publish it on a topic.
-"""
+
 class LDCNNNode:
-
-    # Callback for image processing
-    # It submits the image to the CNN, extract the output, then resize it for clustering
-    # and publishes it on a topic
-    # 
-    #   Args:
-    #       image: image published on topic by the camera
+    """
+        CNN Node. It takes an image as input and process it using the neural network. Then it resizes the output
+        and publish it on a topic.
+    """
     def img_received_callback(self, image):
-
+        '''
+            Callback for image processing
+            It submits the image to the CNN, extract the output, then resize it for clustering
+            and publishes it on a topic
+        
+              Args:
+                  image: image published on topic by the camera
+        '''
         try:
             ### Pytorch conversion
             rospy.loginfo("Received image")
@@ -109,11 +110,11 @@ class LDCNNNode:
                 cv2.waitKey(1)
             except Exception as e:
                 rospy.logerr("Visualization error. Exception: %s" % e)
-    """
-        Class constructor.
-    """
-    def __init__(self):
 
+    def __init__(self):
+        """
+            Class constructor.
+        """
         try:
             # Adding models path to PYTHONPATH to import modules
             rospack = rospkg.RosPack()
@@ -158,7 +159,7 @@ class LDCNNNode:
         except Exception as e:
             rospy.logerr("Cannot initialize ros node. Exception: %s" % e)
 
-
+# Node initialization
 if __name__ == '__main__':
     node = LDCNNNode()
     rospy.loginfo("Shutting down node")

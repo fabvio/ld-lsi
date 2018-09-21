@@ -20,21 +20,23 @@ import numpy as np
 # Ego, left, right
 COLORS = [(255,0,0), (0,255,0), (0,0,255)]
 
-"""
-    Class used to extract clusters and to handle threading.
-"""
+
 class ClusterExecutor:
     """
-        Class constructor
-
-        Args:
-            eps: epsilon used for DBSCAN
-            min_samples: number of points required to be a cluster for DBSCAN
-            threshold_points: number of points required to be a lane
-            multithreading: enable multithreading via ThreadPoolExecutor
-            max_workers: number of threads in the pool
+        Class used to extract clusters and to handle threading.
     """
+
     def __init__(self, eps, min_samples, threshold_points, multithreading=False, max_workers=5):
+        """
+            Class constructor
+
+            Args:
+                eps: epsilon used for DBSCAN
+                min_samples: number of points required to be a cluster for DBSCAN
+                threshold_points: number of points required to be a lane
+                multithreading: enable multithreading via ThreadPoolExecutor
+                max_workers: number of threads in the pool
+        """
         # Clustering parameters
         self.eps = eps
         self.min_samples = min_samples
@@ -45,17 +47,18 @@ class ClusterExecutor:
         if(self.multithreading):
             self.threadpool = ThreadPoolExecutor(max_workers=max_workers)
 
-    """
-        Method used to cluster the points given by the CNN
 
-        Args:
-            points: points to cluster. They can be the points classified as egolane, the one classified
-                    as other_lane, but NOT together
-
-        Returns:
-            pts: an array of arrays containing all the convex hulls (polygons) extracted for that group of points
-    """
     def cluster(self, points):
+        """
+            Method used to cluster the points given by the CNN
+
+            Args:
+                points: points to cluster. They can be the points classified as egolane, the one classified
+                        as other_lane, but NOT together
+
+            Returns:
+                pts: an array of arrays containing all the convex hulls (polygons) extracted for that group of points
+        """
         pts = []
         # Check added to handle when the network doesn't detect any point
         if len(points > 0):
@@ -83,17 +86,17 @@ class ClusterExecutor:
                         pts.append(np.vstack((class_mask[hull.vertices,1], class_mask[hull.vertices,0])).astype(np.int32).T)
         return pts
 
-    """
-        Connector to handle the output of the CNN
-
-        Args: 
-            to_cluster: list of arrays of points. In to_cluster[0] there are the points classified by the CNN as egolane,
-                        in to_cluster[1] the others. This have to be size 2
-        Returns:
-            clusters:     list of arrays of points. Here are saved the convex hull extracted. Again, in the first position
-                        we find the hulls for the egolane, in the other for the other lanes
-    """
     def process_cnn_output(self, to_cluster):
+        """
+            Connector to handle the output of the CNN
+
+            Args: 
+                to_cluster: list of arrays of points. In to_cluster[0] there are the points classified by the CNN as egolane,
+                            in to_cluster[1] the others. This have to be size 2
+            Returns:
+                clusters:     list of arrays of points. Here are saved the convex hull extracted. Again, in the first position
+                            we find the hulls for the egolane, in the other for the other lanes
+        """
         # Output containing the clusters
         clusters = [None] * 2
 
@@ -116,31 +119,33 @@ class ClusterExecutor:
 
         return clusters        
 
-"""
-    Class used to transform a group of convex hulls of different classes in egolane, right lane and left lane
-"""
+
 class LaneExtractor:
     """
-        Class constructor
+        Class used to transform a group of convex hulls of different classes in egolane, right lane and left lane
     """
+
     def __init__(self):
+        """
+        Class constructor
+        """
         pass
 
-    """ 
-        Method used to transform the hulls into polygons.
-        The first thing to do is to select which of the clusters of the egolane is actually the egolane. 
-        This is done selecting the cluster with the biggest area.
-        Then, we subtract the intersections with the other lanes to avoid that one pixel is associated to both the egolane
-        and another lane.
-        Finally, we split the other lanes in left ones and right ones, basing the assumption on the centroid position.
-        The biggest cluster on the right will be the right lane, the biggest on the left the left lane.
 
-        args:
-            egolane_clusters: set of points that represents the convex hull of the egolane. Can be more than one
-            other_lanes_clusters: set of points that represents the convex hull of the other lanes. Can be more than one
-    """ 
     def get_lanes(self, egolane_clusters, other_lanes_clusters):
+        """ 
+            Method used to transform the hulls into polygons.
+            The first thing to do is to select which of the clusters of the egolane is actually the egolane. 
+            This is done selecting the cluster with the biggest area.
+            Then, we subtract the intersections with the other lanes to avoid that one pixel is associated to both the egolane
+            and another lane.
+            Finally, we split the other lanes in left ones and right ones, basing the assumption on the centroid position.
+            The biggest cluster on the right will be the right lane, the biggest on the left the left lane.
 
+            args:
+                egolane_clusters: set of points that represents the convex hull of the egolane. Can be more than one
+                other_lanes_clusters: set of points that represents the convex hull of the other lanes. Can be more than one
+        """ 
         ### Selecting the egolane
         egolane_polygons = [Polygon(x) for x in egolane_clusters]
         egolane = max(egolane_polygons, key=lambda p : p.area)
@@ -178,20 +183,21 @@ class LaneExtractor:
 
         return egolane, left_lane, right_lane
 
-"""
-    Ros Node definition handling messages and errors.
-"""
+
 class LDClusteringNode:
-
     """
-        Callback called when a message from the CNN node is received. Used to
-        elaborate the data using an instance of ClusterExecutor and publish a message
-        on a topic to tell another node where the lanes are
-
-        Args:
-            points_data:    message of type CnnOutput containing the coordinates of egolane and otherlane points
+        Ros Node definition handling messages and errors.
     """
+    
     def points_received_callback(self, points_data):
+        """
+            Callback called when a message from the CNN node is received. Used to
+            elaborate the data using an instance of ClusterExecutor and publish a message
+            on a topic to tell another node where the lanes are
+
+            Args:
+                points_data:    message of type CnnOutput containing the coordinates of egolane and otherlane points
+        """
 
         start_t = time.time()
 
@@ -250,11 +256,11 @@ class LDClusteringNode:
         except Exception as e:
             rospy.logerr("Visualization error: %s " % e)
 
-    """
-        Class constructor
-    """
-    def __init__(self):
 
+    def __init__(self):
+        """
+            Class constructor
+        """
         try:
             ### Retrieving parameters for DBSCAN clustering from the command line
             # Epsilon is used to define the boundaries to search for other points in DBSCAN
