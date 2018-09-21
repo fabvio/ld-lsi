@@ -1,0 +1,6 @@
+<launch>
+  <env name="CUDA_VISIBLE_DEVICES" value="0" />
+  <remap to="/stereo_camera/left/image_rect_color" from="ld_image_input" />
+  <node name="cnn" pkg="ld_lsi" type="cnn_node.py" />
+  <node name="clustering" pkg="ld_lsi" type="clustering_node.py" />
+</launch>

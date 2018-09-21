@@ -1,0 +1,3 @@
+<launch>
+  <node name="cnn" pkg="ld_lsi" type="" />
+</launch>
