@@ -22,6 +22,8 @@ import time
 # Ego: red, other: blue
 COLORS_DEBUG = [(255,0,0), (0,0,255)]
 
+# Road name map
+ROAD_MAP = ['Residential', 'Highway', 'City Street', 'Other']
 
 class LDCNNNode:
     """
@@ -58,6 +60,9 @@ class LDCNNNode:
                     input_tensor = Variable(input_tensor).cuda()
                     output = self.cnn(input_tensor)
 
+            if self.with_road:
+                output, output_road = output
+                road_type = output_road.max(dim=1)[1][0]
             ### Classification
             output = output.max(dim=1)[1]
             output = output.float().unsqueeze(0)
@@ -71,6 +76,7 @@ class LDCNNNode:
 
             ego_lane_points = ego_lane_points.view(-1).cpu().numpy()
             other_lanes_points = other_lanes_points.view(-1).cpu().numpy()
+
         except Exception as e:
             rospy.logerr("Cannot obtain output. Exception: %s" % e)
 
@@ -80,7 +86,8 @@ class LDCNNNode:
             msg = CnnOutput()
             msg.egolane = ego_lane_points
             msg.otherlanes = other_lanes_points
-
+            msg.road_type = -1 if not self.with_road else road_type
+            
             self.pub.publish(msg)
 
             ### Logging and fps measurement
@@ -103,6 +110,8 @@ class LDCNNNode:
                 # Blend the original image and the output of the CNN
                 output = cv2.resize(output, (image.shape[1], image.shape[0]), interpolation=cv2.INTER_NEAREST)
                 image = cv2.addWeighted(image, 1, output, 0.4, 0)
+                if self.with_road:
+                    cv2.putText(image, ROAD_MAP[road_type], (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
 
                 # Visualization
                 rospy.loginfo("Visualizing output")
@@ -121,10 +130,11 @@ class LDCNNNode:
             sys.path.insert(0, os.path.join(rospack.get_path('ld_lsi'),'res','models'))
 
             # Initialize CNN parameters with defaults
-            model_name = rospy.get_param('model_name', 'erfnet')
-            weights_name = rospy.get_param('weights_name', 'weights_erfnet.pth')
+            model_name = rospy.get_param('model_name', 'erfnet_road')
+            weights_name = rospy.get_param('weights_name', 'weights_erfnet_road.pth')
             self.resize_factor = rospy.get_param('resize_factor', 5)
             self.debug = rospy.get_param('debug', True)
+            self.with_road = rospy.get_param('with_road', True)
             queue_size = rospy.get_param('queue_size', 10)
         except Exception as e:
             rospy.logerr("Cannot load parameters. Check your roscore. %s" % e)

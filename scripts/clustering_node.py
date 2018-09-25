@@ -226,6 +226,9 @@ class LDClusteringNode:
             msg.left_lane = None
             msg.right_lane = None
 
+        # Resending the road type
+        msg.road_type = points_data.road_type
+
         ### Publishing the messages
         try:
             self.pub.publish(msg)
