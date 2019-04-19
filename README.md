@@ -1,6 +1,6 @@
 # Enhanced free space detection in multiple lanes based on single CNN with scene identification
 <p align="center">
-![](overview.gif)
+<img src="overview.gif" />
 </p>
 This repository contains the code for the paper "Enhanced free space detection in multiple lanes based on single CNN with scene identification", presented at the IEEE Intelligent Vehicles Symposium 2019.
 
