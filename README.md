@@ -34,7 +34,7 @@ Two launch configuration are available in the `launch` folder. After compiling t
 roslaunch ld_lsi debug
 ```
 
-The difference between the debug configuration and the standard one is that with the debug view, OpenCV is used to display the output of the CNN and of the clustering algorithm.
+The difference between the debug configuration and the standard one is that with the debug view, OpenCV is used to display the output of the CNN and of the clustering algorithm. If you want to use other stream names as inputs for the ROS nodes, please edit the corresponding fields in the launch files.
 
 ## Citation
 
