@@ -95,7 +95,7 @@ class Encoder(nn.Module):
         self.road_layers.append(non_bottleneck_1d(512, 0.3, 1))
         #self.road_layers.append(non_bottleneck_1d(512, 0.3, 1))
 
-        self.road_linear_1 = nn.Linear(512 * 4 * 5, 1024)
+        self.road_linear_1 = nn.Linear(512 * 3 * 5, 1024)
         self.output_road = nn.Linear(1024, 4)
 
         #Only in encoder mode:
