@@ -38,4 +38,13 @@ The difference between the debug configuration and the standard one is that with
 
 ## Citation
 
-Coming soon.
+If you found this code useful for your research, please cite
+
+```
+@article{pizzati2019enhanced,
+  title={Enhanced free space detection in multiple lanes based on single CNN with scene identification},
+  author={Pizzati, Fabio and Garc{\'\i}a, Fernando},
+  journal={arXiv preprint arXiv:1905.00941},
+  year={2019}
+}
+```
