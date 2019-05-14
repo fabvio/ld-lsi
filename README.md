@@ -2,7 +2,7 @@
 <p align="center">
 <img src="overview.gif" />
 </p>
-This repository contains the code for the paper ["Enhanced free space detection in multiple lanes based on single CNN with scene identification"](https://arxiv.org/abs/1905.00941), presented at the IEEE Intelligent Vehicles Symposium 2019.
+This repository contains the code for the paper "[Enhanced free space detection in multiple lanes based on single CNN with scene identification](https://arxiv.org/abs/1905.00941)", presented at the IEEE Intelligent Vehicles Symposium 2019.
 
 ## Note on the CNN part
 
