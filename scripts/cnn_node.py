@@ -45,7 +45,7 @@ class LDCNNNode:
             start_t = time.time()
             image = self.bridge.imgmsg_to_cv2(image)
             input_tensor = torch.from_numpy(image)
-            input_tensor = input_tensor.float() / 255
+            input_tensor = torch.div(input_tensor.float(), 255)
             input_tensor = input_tensor.permute(2,0,1).unsqueeze(0)
         except Exception as e:
             rospy.logerr("Cannot convert image to pytorch. Exception: %s" % e)
