@@ -41,10 +41,13 @@ The difference between the debug configuration and the standard one is that with
 If you found this code useful for your research, please cite
 
 ```
-@article{pizzati2019enhanced,
-  title={Enhanced free space detection in multiple lanes based on single CNN with scene identification},
-  author={Pizzati, Fabio and Garc{\'\i}a, Fernando},
-  journal={arXiv preprint arXiv:1905.00941},
-  year={2019}
-}
+@INPROCEEDINGS{8814181,
+author={F. {Pizzati} and F. {García}},
+booktitle={2019 IEEE Intelligent Vehicles Symposium (IV)},
+title={Enhanced free space detection in multiple lanes based on single CNN with scene identification},
+year={2019},
+pages={2536-2541},
+doi={10.1109/IVS.2019.8814181},
+ISSN={1931-0587},
+month={June},}
 ```
