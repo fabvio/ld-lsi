@@ -7,6 +7,38 @@ import torch
 import torch.nn as nn
 import torch.nn.init as init
 import torch.nn.functional as F
+from torch.quantization import QuantStub, DeQuantStub
+import re
+
+def _make_divisible(v, divisor, min_value=None):
+    """
+    This function is taken from the original tf repo.
+    It ensures that all layers have a channel number that is divisible by 8
+    It can be seen here:
+    https://github.com/tensorflow/models/blob/master/research/slim/nets/mobilenet/mobilenet.py
+    :param v:
+    :param divisor:
+    :param min_value:
+    :return:
+    """
+    if min_value is None:
+        min_value = divisor
+    new_v = max(min_value, int(v + divisor / 2) // divisor * divisor)
+    # Make sure that round down does not go down by more than 10%.
+    if new_v < 0.9 * v:
+        new_v += divisor
+    return new_v
+
+
+class ConvBNReLU(nn.Sequential):
+    def __init__(self, in_planes, out_planes, kernel_size=3, stride=1, groups=1):
+        padding = (kernel_size - 1) // 2
+        super(ConvBNReLU, self).__init__(
+            nn.Conv2d(in_planes, out_planes, kernel_size, stride, padding, groups=groups, bias=False),
+            nn.BatchNorm2d(out_planes, momentum=0.1),
+            # Replace with ReLU
+            nn.ReLU(inplace=False)
+        )
 
 class DownsamplerBlock (nn.Module):
     def __init__(self, ninput, noutput):
@@ -149,3 +181,79 @@ class Net(nn.Module):
         else:
             output = self.encoder(input)    #predict=False by default
             return self.decoder.forward(output)
+        
+#%%    
+def _find_fusable_modules(model):
+    # finds the sequence of modules which can be fused and exports 
+    # as a list of lists
+    """
+    Fuses only the following sequence of modules:
+    conv, bn
+    conv, bn, relu
+    conv, relu
+    linear, relu
+    bn, relu
+    """
+    foundmods = []
+    currmods = []
+    namemods = []
+    step = 0
+    for n, m in model.named_modules():
+        if step == 0:
+            if type(m) == torch.nn.modules.Conv2d or type(m) == torch.nn.modules.Linear or \
+                    type(m) == torch.nn.modules.BatchNorm2d:
+                currmods.append(m)
+                namemods.append(n)
+                step += 1
+        elif step == 1:
+            if type(m) == torch.nn.modules.BatchNorm2d and \
+                    type(currmods[0]) == torch.nn.modules.Conv2d:
+                currmods.append(m)
+                namemods.append(n)
+                step += 1
+            elif type(m) == torch.nn.modules.ReLU \
+              and (type(currmods[0]) == torch.nn.modules.Conv2d \
+              or type(currmods[0]) == torch.nn.modules.BatchNorm2d \
+              or type(currmods[0]) == torch.nn.modules.Linear):
+                currmods.append(m)
+                namemods.append(n)
+                currmods[0].bias = None
+                #reset
+                step = 0
+                currmods = []
+                namemods = []
+            else:
+                step = 0
+                currmods = []
+                namemods = []
+        elif step == 2:
+            if type(m) == torch.nn.modules.ReLU \
+                    and type(currmods[0]) == torch.nn.modules.Conv2d \
+                    and type(currmods[1]) == torch.nn.modules.BatchNorm2d:
+                currmods.append(m)
+                namemods.append(n)
+                currmods[0].bias = None
+                foundmods.append(namemods)
+                #reset
+                step = 0
+                currmods = []
+                namemods = []
+            else:
+                #just append the stuff
+                foundmods.append(namemods)
+                currmods[0].bias = None
+                #reset
+                step = 0
+                currmods = []
+                namemods = []
+        else:
+            step = 0
+            currmods = []
+            namemods = []
+    return foundmods
+
+
+# This operation does not change the numerics
+def fuse_model(model):
+    fmods = _find_fusable_modules(model)
+    torch.quantization.fuse_modules(model, fmods, inplace=True)
