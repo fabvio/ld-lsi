@@ -8,7 +8,6 @@ import torch.nn as nn
 import torch.nn.init as init
 import torch.nn.functional as F
 from torch.quantization import QuantStub, DeQuantStub
-import re
 
 def _make_divisible(v, divisor, min_value=None):
     """
@@ -254,6 +253,7 @@ def _find_fusable_modules(model):
 
 
 # This operation does not change the numerics
-def fuse_model(model):
+def fuse_model(model, inplace=False):
     fmods = _find_fusable_modules(model)
-    torch.quantization.fuse_modules(model, fmods, inplace=True)
+    return torch.quantization.fuse_modules(model, fmods, inplace=inplace)
+    
