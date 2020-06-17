@@ -7,6 +7,9 @@ import torch
 import torch.nn as nn
 import torch.nn.init as init
 import torch.nn.functional as F
+from torch.quantization import QuantStub, DeQuantStub
+from torch.nn.quantized import FloatFunctional
+
 
 class DownsamplerBlock (nn.Module):
     def __init__(self, ninput, noutput):
@@ -39,6 +42,8 @@ class non_bottleneck_1d (nn.Module):
         self.bn2 = nn.BatchNorm2d(chann, eps=1e-03)
 
         self.dropout = nn.Dropout2d(dropprob)
+
+        self.adder = FloatFunctional()
         
 
     def forward(self, input):
@@ -57,7 +62,7 @@ class non_bottleneck_1d (nn.Module):
         if (self.dropout.p != 0):
             output = self.dropout(output)
         
-        return F.relu(output+input)    #+input = identity (residual connection)
+        return F.relu(self.adder.add(output,input))    #+input = identity (residual connection)
 
 
 class Encoder(nn.Module):
@@ -112,7 +117,7 @@ class Encoder(nn.Module):
         for layer in self.road_layers:
             output_road = layer(output_road)
 
-        output_road = output_road.view(bs, -1)
+        output_road = output_road.contiguous().view(bs, -1)
         output_road = self.road_linear_1(output_road)
 
         output_road = self.output_road(output_road)
@@ -128,10 +133,12 @@ class UpsamplerBlock (nn.Module):
         super(UpsamplerBlock, self).__init__()
         self.conv = nn.ConvTranspose2d(ninput, noutput, 3, stride=2, padding=1, output_padding=1, bias=True)
         self.bn = nn.BatchNorm2d(noutput, eps=1e-3)
+        self.quant = QuantStub()
+        self.dequant = DeQuantStub()
 
     def forward(self, input):
-        output = self.conv(input)
-        output = self.bn(output)
+        output = self.conv(self.dequant(input))
+        output = self.bn(self.quant(output))
         return F.relu(output)
 
 class Decoder (nn.Module):
@@ -147,8 +154,10 @@ class Decoder (nn.Module):
         self.layers.append(UpsamplerBlock(64,16))
         self.layers.append(non_bottleneck_1d(16, 0, 1))
         self.layers.append(non_bottleneck_1d(16, 0, 1))
-
+        
         self.output_conv = nn.ConvTranspose2d( 16, num_classes, 2, stride=2, padding=0, output_padding=0, bias=True)
+        self.dequant = DeQuantStub()
+        self.quant = QuantStub()
 
     def forward(self, input):
         output = input
@@ -156,8 +165,9 @@ class Decoder (nn.Module):
         for layer in self.layers:
             output = layer(output)
 
+        output = self.dequant(output)
         output = self.output_conv(output)
-
+        output = self.quant(output)
         return output
 
 #ERFNet
@@ -170,10 +180,13 @@ class Net(nn.Module):
         else:
             self.encoder = encoder
         self.decoder = Decoder(num_classes)
+        self.quant = QuantStub()
+        self.dequant = DeQuantStub()
 
     def forward(self, input, only_encode=False):
         if only_encode:
-            return self.encoder.forward(input, predict=True)
+            input = self.quant(input)
+            return self.dequant(self.encoder.forward(input, predict=True))
         else:
-            output, output_road = self.encoder(input)    #predict=False by default
-            return self.decoder.forward(output), output_road
+            output, output_road = self.encoder(self.quant(input))    #predict=False by default
+            return self.dequant(self.decoder.forward(output)), self.dequant(output_road)
