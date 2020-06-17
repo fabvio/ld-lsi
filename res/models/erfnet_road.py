@@ -170,6 +170,8 @@ class Net(nn.Module):
         else:
             self.encoder = encoder
         self.decoder = Decoder(num_classes)
+	self.quant = QuantStub()
+        self.dequant = DeQuantStub()
 
     def forward(self, input, only_encode=False):
         if only_encode:
