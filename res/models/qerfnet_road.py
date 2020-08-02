@@ -8,36 +8,8 @@ import torch.nn as nn
 import torch.nn.init as init
 import torch.nn.functional as F
 from torch.quantization import QuantStub, DeQuantStub
+from torch.nn.quantized import FloatFunctional
 
-def _make_divisible(v, divisor, min_value=None):
-    """
-    This function is taken from the original tf repo.
-    It ensures that all layers have a channel number that is divisible by 8
-    It can be seen here:
-    https://github.com/tensorflow/models/blob/master/research/slim/nets/mobilenet/mobilenet.py
-    :param v:
-    :param divisor:
-    :param min_value:
-    :return:
-    """
-    if min_value is None:
-        min_value = divisor
-    new_v = max(min_value, int(v + divisor / 2) // divisor * divisor)
-    # Make sure that round down does not go down by more than 10%.
-    if new_v < 0.9 * v:
-        new_v += divisor
-    return new_v
-
-
-class ConvBNReLU(nn.Sequential):
-    def __init__(self, in_planes, out_planes, kernel_size=3, stride=1, groups=1):
-        padding = (kernel_size - 1) // 2
-        super(ConvBNReLU, self).__init__(
-            nn.Conv2d(in_planes, out_planes, kernel_size, stride, padding, groups=groups, bias=False),
-            nn.BatchNorm2d(out_planes, momentum=0.1),
-            # Replace with ReLU
-            nn.ReLU(inplace=False)
-        )
 
 class DownsamplerBlock (nn.Module):
     def __init__(self, ninput, noutput):
@@ -70,6 +42,8 @@ class non_bottleneck_1d (nn.Module):
         self.bn2 = nn.BatchNorm2d(chann, eps=1e-03)
 
         self.dropout = nn.Dropout2d(dropprob)
+
+        self.adder = FloatFunctional()
         
 
     def forward(self, input):
@@ -88,7 +62,7 @@ class non_bottleneck_1d (nn.Module):
         if (self.dropout.p != 0):
             output = self.dropout(output)
         
-        return F.relu(output+input)    #+input = identity (residual connection)
+        return F.relu(self.adder.add(output,input))    #+input = identity (residual connection)
 
 
 class Encoder(nn.Module):
@@ -111,19 +85,47 @@ class Encoder(nn.Module):
             self.layers.append(non_bottleneck_1d(128, 0.3, 8))
             self.layers.append(non_bottleneck_1d(128, 0.3, 16))
 
+        self.road_layers = nn.ModuleList()
+
+        self.road_layers.append(nn.Conv2d(128, 256, (3, 3), stride=2, padding=2))
+        self.road_layers.append(nn.MaxPool2d(2, stride=2))
+        self.road_layers.append(nn.BatchNorm2d(256, eps=1e-3))
+        self.road_layers.append(non_bottleneck_1d(256, 0.3, 1))
+        #self.road_layers.append(non_bottleneck_1d(256, 0.3, 1))
+
+        self.road_layers.append(nn.Conv2d(256, 512, (3, 3), stride=2, padding=2))
+        self.road_layers.append(nn.MaxPool2d(2, stride=2))
+        self.road_layers.append(nn.BatchNorm2d(512, eps=1e-3))
+
+        self.road_layers.append(non_bottleneck_1d(512, 0.3, 1))
+        #self.road_layers.append(non_bottleneck_1d(512, 0.3, 1))
+
+        self.road_linear_1 = nn.Linear(512 * 3 * 5, 1024)
+        self.output_road = nn.Linear(1024, 4)
+
         #Only in encoder mode:
         self.output_conv = nn.Conv2d(128, num_classes, 1, stride=1, padding=0, bias=True)
 
     def forward(self, input, predict=False):
+        bs = input.size()[0]
         output = self.initial_block(input)
 
         for layer in self.layers:
             output = layer(output)
 
+        output_road = output
+        for layer in self.road_layers:
+            output_road = layer(output_road)
+
+        output_road = output_road.contiguous().view(bs, -1)
+        output_road = self.road_linear_1(output_road)
+
+        output_road = self.output_road(output_road)
+
         if predict:
             output = self.output_conv(output)
 
-        return output
+        return output, output_road
 
 
 class UpsamplerBlock (nn.Module):
@@ -131,10 +133,12 @@ class UpsamplerBlock (nn.Module):
         super(UpsamplerBlock, self).__init__()
         self.conv = nn.ConvTranspose2d(ninput, noutput, 3, stride=2, padding=1, output_padding=1, bias=True)
         self.bn = nn.BatchNorm2d(noutput, eps=1e-3)
+        self.quant = QuantStub()
+        self.dequant = DeQuantStub()
 
     def forward(self, input):
-        output = self.conv(input)
-        output = self.bn(output)
+        output = self.conv(self.dequant(input))
+        output = self.bn(self.quant(output))
         return F.relu(output)
 
 class Decoder (nn.Module):
@@ -150,8 +154,10 @@ class Decoder (nn.Module):
         self.layers.append(UpsamplerBlock(64,16))
         self.layers.append(non_bottleneck_1d(16, 0, 1))
         self.layers.append(non_bottleneck_1d(16, 0, 1))
-
+        
         self.output_conv = nn.ConvTranspose2d( 16, num_classes, 2, stride=2, padding=0, output_padding=0, bias=True)
+        self.dequant = DeQuantStub()
+        self.quant = QuantStub()
 
     def forward(self, input):
         output = input
@@ -159,8 +165,9 @@ class Decoder (nn.Module):
         for layer in self.layers:
             output = layer(output)
 
+        output = self.dequant(output)
         output = self.output_conv(output)
-
+        output = self.quant(output)
         return output
 
 #ERFNet
@@ -173,87 +180,13 @@ class Net(nn.Module):
         else:
             self.encoder = encoder
         self.decoder = Decoder(num_classes)
+        self.quant = QuantStub()
+        self.dequant = DeQuantStub()
 
     def forward(self, input, only_encode=False):
         if only_encode:
-            return self.encoder.forward(input, predict=True)
+            input = self.quant(input)
+            return self.dequant(self.encoder.forward(input, predict=True))
         else:
-            output = self.encoder(input)    #predict=False by default
-            return self.decoder.forward(output)
-        
-#%%    
-def _find_fusable_modules(model):
-    # finds the sequence of modules which can be fused and exports 
-    # as a list of lists
-    """
-    Fuses only the following sequence of modules:
-    conv, bn
-    conv, bn, relu
-    conv, relu
-    linear, relu
-    bn, relu
-    """
-    foundmods = []
-    currmods = []
-    namemods = []
-    step = 0
-    for n, m in model.named_modules():
-        if step == 0:
-            if type(m) == torch.nn.modules.Conv2d or type(m) == torch.nn.modules.Linear or \
-                    type(m) == torch.nn.modules.BatchNorm2d:
-                currmods.append(m)
-                namemods.append(n)
-                step += 1
-        elif step == 1:
-            if type(m) == torch.nn.modules.BatchNorm2d and \
-                    type(currmods[0]) == torch.nn.modules.Conv2d:
-                currmods.append(m)
-                namemods.append(n)
-                step += 1
-            elif type(m) == torch.nn.modules.ReLU \
-              and (type(currmods[0]) == torch.nn.modules.Conv2d \
-              or type(currmods[0]) == torch.nn.modules.BatchNorm2d \
-              or type(currmods[0]) == torch.nn.modules.Linear):
-                currmods.append(m)
-                namemods.append(n)
-                currmods[0].bias = None
-                #reset
-                step = 0
-                currmods = []
-                namemods = []
-            else:
-                step = 0
-                currmods = []
-                namemods = []
-        elif step == 2:
-            if type(m) == torch.nn.modules.ReLU \
-                    and type(currmods[0]) == torch.nn.modules.Conv2d \
-                    and type(currmods[1]) == torch.nn.modules.BatchNorm2d:
-                currmods.append(m)
-                namemods.append(n)
-                currmods[0].bias = None
-                foundmods.append(namemods)
-                #reset
-                step = 0
-                currmods = []
-                namemods = []
-            else:
-                #just append the stuff
-                foundmods.append(namemods)
-                currmods[0].bias = None
-                #reset
-                step = 0
-                currmods = []
-                namemods = []
-        else:
-            step = 0
-            currmods = []
-            namemods = []
-    return foundmods
-
-
-# This operation does not change the numerics
-def fuse_model(model, inplace=False):
-    fmods = _find_fusable_modules(model)
-    return torch.quantization.fuse_modules(model, fmods, inplace=inplace)
-    
+            output, output_road = self.encoder(self.quant(input))    #predict=False by default
+            return self.dequant(self.decoder.forward(output)), self.dequant(output_road)
